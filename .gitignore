@@ -1,0 +1,6 @@
+*.o
+compiler
+.DS_Store
+number_test.lille
+invalid_number.lille
+string_test.lille
