@@ -1,4 +1,9 @@
 /*
+ * Gracie Mitchell | CSC-4510 | Scanner Phase corrections
+ * Validates exponent signs and nonempty strings, improves numeric errors,
+ * and documents lexical decisions. Original author notice follows.
+ */
+/*
  * scanner.cpp
  *
  * Written:            1 June 2020
@@ -392,9 +397,12 @@ token* scanner::get_token()
 
 void scanner::scan_string()
 {
+    // The opening quote has already been recognized. Quotes doubled inside
+    // a literal represent one quote character; a single quote closes it.
     current_string_value = "";
     current_symbol = new symbol(symbol::strng);
     get_char();
+
     while (!eoln_flag && !eof_flag)
     {
         if (next_char == '"')
@@ -405,7 +413,17 @@ void scanner::scan_string()
                 get_char();
                 get_char();
             }
-            else return;
+            else
+            {
+                // Lille does not permit empty string literals.
+                // The caller consumes the closing quote after this returns.
+                if (current_string_value.empty())
+                {
+                    error->flag(current_line_number, current_pos_on_line, 130);
+                    current_symbol = new symbol(symbol::nul);
+                }
+                return;
+            }
         }
         else
         {
@@ -413,7 +431,10 @@ void scanner::scan_string()
             get_char();
         }
     }
+
+    // A string literal must close before the end of its line.
     error->flag(current_line_number, current_pos_on_line, 60);
+    current_symbol = new symbol(symbol::nul);
 }
 
 void scanner::scan_alpha()
@@ -520,49 +541,91 @@ void scanner::scan_alpha()
 
 void scanner::scan_digit()
 {
-    string number = "";
+    // The number begins with digits and may include a fractional part and/or
+    // an exponent. A double dot belongs to the RANGE token, not a real number.
+    string number;
     bool is_real = false;
     bool has_exponent = false;
     bool negative_exponent = false;
-    while (isdigit(next_char)) { number += next_char; get_char(); }
+
+    while (isdigit(static_cast<unsigned char>(next_char)))
+    {
+        number += next_char;
+        get_char();
+    }
+
     if (next_char == '.' && following_char() != '.')
     {
         is_real = true;
         number += next_char;
         get_char();
-        if (!isdigit(next_char))
+        if (!isdigit(static_cast<unsigned char>(next_char)))
         {
+            // A decimal point must be followed by at least one digit.
             error->flag(current_line_number, current_pos_on_line, 63);
             current_symbol = new symbol(symbol::nul);
             return;
         }
-        while (isdigit(next_char)) { number += next_char; get_char(); }
+        while (isdigit(static_cast<unsigned char>(next_char)))
+        {
+            number += next_char;
+            get_char();
+        }
     }
+
     if (next_char == 'E' || next_char == 'e')
     {
         has_exponent = true;
         number += next_char;
         get_char();
-        if (next_char == '+' || next_char == '-')
+
+        // Lille requires an explicit exponent sign, including for positive
+        // exponents: 12E+3 is valid, but 12E3 is malformed.
+        if (next_char != '+' && next_char != '-')
         {
-            if (next_char == '-') negative_exponent = true;
-            number += next_char;
-            get_char();
+            error->flag(current_line_number, current_pos_on_line, 131);
+            current_symbol = new symbol(symbol::nul);
+            // Avoid reporting the remaining exponent digits as another token.
+            while (isdigit(static_cast<unsigned char>(next_char))) get_char();
+            return;
         }
-        if (!isdigit(next_char))
+        negative_exponent = (next_char == '-');
+        number += next_char;
+        get_char();
+
+        if (!isdigit(static_cast<unsigned char>(next_char)))
         {
             error->flag(current_line_number, current_pos_on_line, 64);
             current_symbol = new symbol(symbol::nul);
             return;
         }
-        while (isdigit(next_char)) { number += next_char; get_char(); }
+        while (isdigit(static_cast<unsigned char>(next_char)))
+        {
+            number += next_char;
+            get_char();
+        }
     }
+
+    // Catch a second isolated decimal point while still scanning the numeric
+    // literal, rather than incorrectly reporting an expected RANGE symbol.
+    // A '..' sequence is left untouched for the normal range-token scanner.
+    if (next_char == '.' && following_char() != '.')
+    {
+        error->flag(current_line_number, current_pos_on_line, 132);
+        current_symbol = new symbol(symbol::nul);
+        get_char();
+        while (isdigit(static_cast<unsigned char>(next_char))) get_char();
+        return;
+    }
+
+    // Preserve the starter code's restriction on negative integer exponents.
     if (!is_real && has_exponent && negative_exponent)
     {
         error->flag(current_line_number, current_pos_on_line, 67);
         current_symbol = new symbol(symbol::nul);
         return;
     }
+
     try
     {
         if (is_real)
@@ -574,13 +637,16 @@ void scanner::scan_digit()
         else
         {
             double value = stod(number);
-            if (!isfinite(value) || value > 2147483647.0) throw out_of_range("Integer number too large");
+            if (!isfinite(value) || value > 2147483647.0)
+                throw out_of_range("Integer number too large");
             current_integer_value = static_cast<int>(value);
             current_symbol = new symbol(symbol::integer);
         }
     }
     catch (const exception&)
     {
+        // Use the existing numeric overflow codes rather than a punctuation
+        // error code; token locations point to the start of the literal.
         if (is_real) error->flag(current_line_number, current_pos_on_line, 66);
         else error->flag(current_line_number, current_pos_on_line, 68);
         current_symbol = new symbol(symbol::nul);

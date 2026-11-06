@@ -1,4 +1,8 @@
 /*
+ * Gracie Mitchell | CSC-4510 | Scanner Phase corrections
+ * Adds descriptive lexical errors for empty strings, exponent signs, and numeric punctuation.
+ */
+/*
  * error_handler.cpp
  *
  * Written:            1 June 2020
@@ -159,6 +163,10 @@ void error_handler::initialize_error_messages()
 	error_message[72] = "Variable name expected.";
 	error_message[73] = "ON or OFF expected.";
 	error_message[74] = "illegal character.";
+	// Scanner-specific lexical errors; keep legacy numeric codes unchanged.
+	error_message[130] = "Empty string literals are not permitted.";
+	error_message[131] = "Exponent sign (+ or -) required after E.";
+	error_message[132] = "Malformed numeric literal: unexpected decimal point.";
 	error_message[75] = "Identifier name must match program name.";
 	error_message[76] = "Block expected.";
 	error_message[77] = "End of program expected. No symbols permitted after end of program.";
